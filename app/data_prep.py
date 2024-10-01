@@ -71,10 +71,7 @@ def load_index(data_path: str = DATA_PATH) -> Elasticsearch:
         }
     }
 
-    try:
-        es_client.indices.create(index=INDEX_NAME, body=index_settings)
-    except ConnectionError:
-        es_client.options(ignore_status=[400, 404]).indices.delete(index=INDEX_NAME)
+    if not es_client.indices.exists(index=INDEX_NAME):
         es_client.indices.create(index=INDEX_NAME, body=index_settings)
 
     return load_documents_in_index(INDEX_NAME, es_client, documents)

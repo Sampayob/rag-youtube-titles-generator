@@ -67,14 +67,14 @@ Finally, it calls the LLM to generate a title based on the combined information.
 
 ## Technologies
 
-* [Elasticsearch]() - for text search
+* Elasticsearch for text search
 * OpenAI API as an LLM
 * Flask as the API interface (see [Official Flask documentation](https://flask.palletsprojects.com/))
 
 
 ## Configure global variables
 
-* Create a `.env` file in the project root directory with the global variables defined below.
+* Create a [.env](.env) file in the project root directory with the global variables defined below.
 * All the defined global variables do not need modifications, **except for the OpenAI API key, which is needed to run the LLM model.**
 
 ```
@@ -99,9 +99,22 @@ ELASTIC_PORT=9200
 OPENAI_API_KEY=
 ```
 
-## Running it with Docker
 
-The easiest way to run the app its with Docker:
+## Running the aplication with Docker Compose (also to run the database)
+
+The easiest way to run the app its with Docker Compose:
+
+```bash
+docker-compose --env-file .env up
+```
+
+To prepare the database for the first time, run:
+
+```bash
+poetry run python app/db_prep.py 
+```
+
+## Running the application with Docker
 
 First, download and run Elasticsearch in docker with the following command:
 
@@ -117,8 +130,14 @@ docker run -it \
     docker.elastic.co/elasticsearch/elasticsearch:8.4.3
 ```
 
-Then, in a different terminal, inside the `app` directory, run the app docker image.
+Then, in a different terminal, build and run the app docker image:
 
+1. Build Docker image
+```bash
+docker build -t youtube-title-generator .
+```
+
+1. Run Docker image
 ```bash
 docker run -it --rm \
   --env-file ./.env \
@@ -127,7 +146,8 @@ docker run -it --rm \
   youtube-title-generator
 ```
 
-## Running it locally
+
+## Running the application locally
 
 - Python version: 3.10
 - Dependencies managing: `poetry`
@@ -135,19 +155,19 @@ docker run -it --rm \
 
 ### Installing the dependencies
 
-If docker is not used, you need to manually prepare the environment and the next described sections.
+If docker is not used, you need to manually prepare the environment. Follow this steps:
 
-Install poetry:
+1. Install poetry:
 ```bash
 pip install poetry
 ```
 
-From the projec root directory (in which `poetry.lock` and `pyproject.toml` are located) install the dependencies:
+2. From the project root directory (in which `poetry.lock` and `pyproject.toml` are located) install the dependencies:
 ```bash
 poetry install
 ```
 
-Activate the virtual environment (**remember do to it every time**):
+3. Activate the virtual environment (**remember do to it every time**):
 ```bash
 poetry shell
 ```
@@ -171,17 +191,14 @@ docker run -it \
 **App**: In a different terminal, run the application locally:
 
 ```bash
+cd app/
 poetry run python app.py
 ```
 
-## Preparing the application
+*If an error while reading the data rise, modify the [.env](.env) file, change the `DATA_PATH` variable to be able to read [data.csv](data/data.csv) from a parent directory*
 
-Before starting the app, initialize the database:
-
-```bash
-cd app
-export POSTGRES_HOST=localhost
-poetry run python db_prep.py
+```
+DATA_PATH=../data/data.csv
 ```
 
 ## Using the application
@@ -190,14 +207,24 @@ First, start the application either with docker-compose or locally as described 
 
 **Testing**
 
+
+> [!WARNING]  
+> The queries/conversations will be stored in the database only if its already running. If not, a "Connection refused" error will be logged after a POST is done.
+
+The easiest way to run a test is to use the [test.py](test.py) script:
+
 ```bash
-URL=htpp://localphost:9696/query
+poetry run python test.py
+```
 
-QUERY = "Top five easiest recipes under 10 minutes"
+Alternatively, the following bash commands could be used for tesitng:
 
-DATA = '{
-  {"query": "'${QUERY}'" }
-}'
+```bash
+URL=http://localhost:9696
+
+QUERY="Top five easiest recipes under 10 minutes"
+
+DATA='{"query": "'${QUERY}'" }'
 
 curl -X POST \
   -H "Content-Type: application/json" \
@@ -208,7 +235,7 @@ curl -X POST \
 The returned data will look like this:
 ```json
 {
-  "conversation_id": 'b40900e1-7c69-467e-93bd-a530f8a3d92a',
+  "conversation_id": "b40900e1-7c69-467e-93bd-a530f8a3d92a",
   "title": '"Top 5 Quick and Easy Recipes You Can Make in Under 10 Minutes!"'
   }
 ```
@@ -216,7 +243,6 @@ The returned data will look like this:
 Sending feedback:
 
 ```bash
-
 FEEDBACK_DATA='{
   "conversation_id": "'${ID}'",
   "feedback": 1
@@ -232,19 +258,17 @@ curl -X POST \
 The returned data will look like this:
 ```json
 {
-  "message": "Feedback received for conversation b40900e1-7c69-467e-93bd-a530f8a3d92a: feedback: 1"
+  "message": "Feedback: query_id: b40900e1-7c69-467e-93bd-a530f8a3d92a, feedback: 1"
     }
-```
-
-Alternatively, you can use [test.py](test.py) for testing it:
-
-```bash
-poetry run python test.py
 ```
 
 ### Misc
 
-**Jupyter notebooks**: To run Jupyter notebooks for experiments:
+**Jupyter notebooks**
+
+The notebooks are located in [lab/notebooks](lab/notebooks)
+
+ To run Jupyter notebooks for experiments:
 ```bash
 poetry run jupyter notebook
 ```
@@ -255,13 +279,13 @@ Flask for serving the application as an API.
 
 Refer to the ["Running the aplication" section](#running-the-aplication) for more information.
 
-## Ingestion
+## Ingestion/data preprocessing
 
-For the code for the ingestion script is in [app/ingest.py](app/ingest.py), which it's run on the startup of the app (in [app/app.py](app/app.py))
+The data preprocessing and ingestion is in [app/data_prep.py](app/data_prep.py), which it's run on the startup of the app (in [app/app.py](app/app.py))
 
 ## Evaluation
 
-For the code for evaluating system, check [lab/notebooks/rag_lab.ipynb](lab/notebooks/rag_lab.ipynb) notebook*.
+Evaluating system notebook: [lab/notebooks/rag_lab.ipynb](lab/notebooks/rag_lab.ipynb) notebook*.
 
 **Ensure to have Elasticsearch running on the same port before running the notebook. Also, create the environment variable `OPENAI_API_KEY` with your personal OpenAI API key in the command line or in a `.env` file*.
 
@@ -278,17 +302,15 @@ The elasticsearch approach gave the following results:
 - `mrr`: 0.8764996031746036
 
 ### RAG flow
-The metric used to evaluate the quality of the RAG flow was:
-- LLM-as-a-Judge: solution that uses LLMs to evaluate LLM responses based on any specific criteria of your choice, which means using LLMs to carry out LLM (system) evaluation.
+The metric used to evaluate the quality of the RAG flow was **LLM-as-a-Judge**: solution that uses LLMs to evaluate LLM responses based on any specific criteria of your choice, which means using LLMs to carry out LLM (system) evaluation.
 
 The RAG flow gave the following results:
 
 Among 1000 records:
 
- - gpt-4o-mini:
-    - X RELEVANT: 599 (60%)
-    - Y PARTLY_RELEVANT: 330 (33%)
-    - Z IRRELEVANT: 71 (7%)
+- gpt-4o-mini
+  - X RELEVANT: 599 (60%)
+  - Y PARTLY_RELEVANT: 330 (33%)
+  - Z IRRELEVANT: 71 (7%)
 
-### Monitoring
 

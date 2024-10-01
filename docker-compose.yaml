@@ -3,12 +3,13 @@ version: '3.8'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.4.3
+    container_name: elasticsearch
     environment:
       - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g 
       - xpack.security.enabled=false
     ports:
       - "${ELASTIC_PORT:-9200}:9200"
-      - "9300:9300"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
 
@@ -28,11 +29,16 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - ELASTIC_URL=http://elasticsearch:${ELASTIC_PORT:-9200}
+      - ELASTIC_PORT=${ELASTIC_PORT}
+      - ELASTIC_URL=${ELASTIC_URL}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATA_PATH=${DATA_PATH}
+      - INDEX_NAME=${INDEX_NAME}
+      - ELASTIC_URL_LOCAL=${ELASTIC_URL_LOCAL}
     ports:
       - "${APP_PORT:-9696}:9696"
     depends_on:

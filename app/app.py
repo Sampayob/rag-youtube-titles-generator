@@ -2,9 +2,11 @@
 
 import os
 import uuid
+import warnings
 
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+import psycopg2
 
 from rag import rag_function
 import db
@@ -25,18 +27,21 @@ def handle_query():
     if not query:
         return jsonify({"error": "No query provided"}), 400
 
-    conversation_id = str(uuid.uuid4())
+    query_id = str(uuid.uuid4())
 
     title = rag_function(query)
 
     result = ({
-        "conversation_id": conversation_id,
+        "conversation_id": query_id,
         "title": title
     })
 
-    db.save_conversation(conversation_id=conversation_id,
-                         query=query,
-                         answer_data=title)
+    try:
+        db.save_query(query_id=query_id,
+                      query=query,
+                      answer_data=title)
+    except psycopg2.OperationalError as e:
+        print(e)
 
     return jsonify(result)
 
@@ -44,14 +49,14 @@ def handle_query():
 @app.route("/feedback", methods=["POST"])
 def handle_feedback():
     data = request.json
-    conversation_id = data["conversation_id"]
+    query_id = data["query_id"]
     feedback = data["feedback"]
 
-    if not conversation_id or feedback not in [1, -1]:
+    if not query_id or feedback not in [1, -1]:
         return jsonify({'error': 'Invalid input'}), 400
 
     result = {
-        "message": f"Feedback received for conversation {conversation_id}: feedback: {feedback}"
+        "message": f"Feedback: query_id: {query_id}, feedback: {feedback}"
     }
 
     return jsonify(result)

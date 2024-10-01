@@ -1,19 +1,20 @@
 """RAG Module"""
 
 import os
+from time import time
+import json
+from typing import Tuple
 
 from dotenv import load_dotenv
 from openai import OpenAI
 import pandas as pd
 from elasticsearch import Elasticsearch
-from ingest import load_index
+from data_prep import load_index
 
 
 load_dotenv()
 
 INDEX_NAME = os.getenv("INDEX_NAME")
-
-client = OpenAI()
 
 prompt_template = """
 You're a professional youtuber. Answer with a youtube video title to the QUERY which is based on the CONTEXT from the video database.
@@ -24,6 +25,26 @@ QUERY:
 
 CONTEXT:
 {context}
+""".strip()
+
+evaluation_prompt_template = """
+You are an expert evaluator for a Retrieval-Augmented Generation (RAG) system.
+Your task is to analyze the relevance of the generated answer to the given query.
+Based on the relevance of the generated answer, you will classify it
+as "NON_RELEVANT", "PARTLY_RELEVANT", or "RELEVANT".
+
+Here is the data for evaluation:
+
+query: {query}
+Generated Answer: {answer}
+
+Please analyze the content and context of the generated answer in relation to the question
+and provide your evaluation in parsable JSON without using code blocks:
+
+{{
+"Relevance": "NON_RELEVANT" | "PARTLY_RELEVANT" | "RELEVANT",
+"Explanation": "[Provide a brief explanation for your evaluation]"
+}}
 """.strip()
 
 entry_template = """
@@ -89,7 +110,7 @@ def search(index_name: str, es_client: Elasticsearch, query: str) -> list:
     return [r['_source'] for r in search_results['hits']['hits']]
 
 
-def llm(prompt: str, model='gpt-4o-mini') -> str:
+def llm(prompt: str, model='gpt-4o-mini') -> Tuple[dict, dict]:
     """
     Returns the response message to a prompt from a LLM model
 
@@ -98,15 +119,44 @@ def llm(prompt: str, model='gpt-4o-mini') -> str:
 
     :returns: LLM response in string format
     """
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}]
     )
 
-    return response.choices[0].message.content
+    answer = response.choices[0].message.content
+    tokens_stats = {
+        'prompt_tokens': response.usage.prompt_tokens,
+        'completion_tokens': response.usage.completion_tokens,
+        'total_tokens': response.usage.total_tokens
+    }
+
+    return answer, tokens_stats
 
 
-def rag_function(query: str) -> str:
+def evaluate_relevance(query: str, answer: str) -> Tuple[dict, dict]:
+    """
+    Evaluate the answer relevance
+
+    :param query: input query.
+    :param answer: LLM answer.
+    """
+    prompt = evaluation_prompt_template.format(query=query, answer=answer)
+    evaluation, tokens = llm(prompt, 'gpt-4o-mini')
+
+    try:
+        json_eval = json.loads(evaluation)
+        return json_eval, tokens
+    except json.JSONDecodeError:
+        result = {
+            "Relevance": "UNKNOWN",
+            "Explanation": "Failed to parse evaluation"
+        }
+        return result, tokens
+
+
+def rag_function(query: str) -> dict:
     """
     Returns the RAG flow answer
 
@@ -114,6 +164,7 @@ def rag_function(query: str) -> str:
 
     :results: LLM response in string format
     """
+    start = time()
     es_client = load_index()
 
     search_results = search(index_name=INDEX_NAME,
@@ -125,6 +176,25 @@ def rag_function(query: str) -> str:
                           entry_template=entry_template,
                           prompt_template=prompt_template)
 
-    answer = llm(prompt=prompt)
-    return answer
+    model = 'gpt-4o-mini'
+    answer, tokens_stats = llm(prompt=prompt, model=model)
 
+    relevance, rel_tokens_stats = evaluate_relevance(query, answer)
+
+    response_time = time() - start
+
+    answer_data = {
+        "answer": answer,
+        "model_used": model,
+        "response_time": response_time,
+        "relevance": relevance.get("Relevance", "UNKNOWN"),
+        "relevance_explanation": relevance.get("Explanation", "Failed to parse evaluation"),
+        "prompt_tokens": tokens_stats['prompt_tokens'],
+        "completion_tokens": tokens_stats['completion_tokens'],
+        "total_tokens": tokens_stats['total_tokens'],
+        "eval_prompt_tokens": rel_tokens_stats['prompt_tokens'],
+        "eval_completion_tokens": rel_tokens_stats['completion_tokens'],
+        "eval_tokens_tokens": rel_tokens_stats['total_tokens']
+    }
+
+    return answer_data
